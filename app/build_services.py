@@ -39,8 +39,12 @@ class PipelineServices:
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.raw_llm = build_llm(config)
-        # Discovery, Resolver and Runtime are deterministic: only Planner can spend this call.
-        self.llm = BudgetedLLMClient(self.raw_llm, max_calls=1)
+        planning = config.get("planning", {})
+        max_llm_calls = planning.get(
+            "max_initial_calls",
+            config.get("run", {}).get("max_llm_calls", 1),
+        ) + planning.get("max_repair_calls", 0)
+        self.llm = BudgetedLLMClient(self.raw_llm, max_calls=max_llm_calls)
         modules = config.get("modules", {})
         model_config = config.get("models", {})
         asr_impl = modules.get("asr_impl", "mock")
@@ -59,7 +63,11 @@ class PipelineServices:
         else:
             raise ValueError(f"Unknown ASR implementation: {asr_impl}")
 
-        self.discovery = DiscoveryService(top_k=modules.get("discovery_top_k", 8))
+        discovery_settings = config.get("discovery", {})
+        self.discovery = DiscoveryService(
+            top_k=discovery_settings.get("initial_top_k", modules.get("discovery_top_k", 8)),
+            recovery_top_k=discovery_settings.get("recovery_top_k", 5),
+        )
         planner_impl = modules.get("planner_impl", "mock")
         if planner_impl == "mock":
             self.planner = MockPlanner()
@@ -67,14 +75,21 @@ class PipelineServices:
             self.planner = SingleShotPlanner(
                 self.llm,
                 max_new_tokens=model_config.get("llm", {}).get("max_new_tokens", {}).get("plan", 900),
+                repair_max_new_tokens=model_config.get("llm", {}).get("max_new_tokens", {}).get("repair", 700),
             )
         else:
             raise ValueError(f"Unknown planner implementation: {planner_impl}")
-        self.resolver = ResolverService()
+        resolver_settings = config.get("resolver", {})
+        self.resolver = ResolverService(
+            require_provenance_for=resolver_settings.get("require_provenance_for"),
+            strict_semantic_ready=resolver_settings.get("strict_semantic_ready", True),
+        )
         run_settings = config.get("run", {})
         self.runtime = RuntimeService(
             max_steps=run_settings.get("max_execution_steps", 12),
             timeout_seconds=run_settings.get("max_runtime_seconds", 120),
+            max_explore_tasks=config.get("runtime", {}).get("max_explore_tasks", 3),
+            per_issue_attempts=config.get("runtime", {}).get("per_issue_attempts", 1),
         )
 
     def reset_budget(self) -> None:

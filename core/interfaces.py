@@ -9,10 +9,13 @@ from pydantic import BaseModel
 
 from core.contracts import (
     AgentRequest,
+    InformationNeed,
+    PlanPatch,
     PlanTask,
     ResolutionResult,
     RunResult,
     TaskPlan,
+    ToolCandidate,
     ToolSpec,
     Transcript,
 )
@@ -26,15 +29,36 @@ class ASR(Protocol):
 
 class Discovery(Protocol):
     def retrieve(self, request: AgentRequest, catalog: list[ToolSpec]) -> list[ToolSpec]: ...
+    def retrieve_for_need(
+        self,
+        need: InformationNeed,
+        catalog: list[ToolSpec],
+        history: list[str] | None = None,
+    ) -> list[ToolCandidate]: ...
 
 
 class Planner(Protocol):
     def generate_plan(self, request: AgentRequest, candidates: list[ToolSpec]) -> TaskPlan: ...
+    def repair_plan(
+        self,
+        request: AgentRequest,
+        state_snapshot: dict[str, Any],
+        issues: list[dict[str, Any]],
+        candidates: list[ToolCandidate],
+        *,
+        base_plan_version: int,
+    ) -> PlanPatch: ...
 
 
 class Resolver(Protocol):
     def resolve(
-        self, task: PlanTask, observations: dict[str, Any], tool_spec: ToolSpec
+        self,
+        task: PlanTask,
+        observations: dict[str, Any],
+        tool_spec: ToolSpec,
+        *,
+        context: dict[str, Any] | None = None,
+        transcript: str = "",
     ) -> ResolutionResult: ...
 
 
@@ -47,7 +71,18 @@ class Environment(Protocol):
 
 
 class Runtime(Protocol):
-    def execute_plan(self, plan: TaskPlan, resolver: Resolver, environment: Environment) -> RunResult: ...
+    def execute_plan(
+        self,
+        plan: TaskPlan,
+        resolver: Resolver,
+        environment: Environment,
+        *,
+        request: AgentRequest | None = None,
+        discovery: Discovery | None = None,
+        planner: Planner | None = None,
+        adaptive: bool = False,
+        max_repair_calls: int = 0,
+    ) -> RunResult: ...
 
 
 class LLMClient(Protocol):

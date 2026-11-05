@@ -20,7 +20,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--limit must be positive")
     config = load_config(args.config)
     records, bundle_root, _ = load_train_records(config, args.limit)
-    discovery = DiscoveryService(top_k=config.get("modules", {}).get("discovery_top_k", 8))
+    discovery_settings = config.get("discovery", {})
+    discovery = DiscoveryService(
+        top_k=discovery_settings.get("initial_top_k", config.get("modules", {}).get("discovery_top_k", 8)),
+        recovery_top_k=discovery_settings.get("recovery_top_k", 5),
+    )
     recalled = expected_count = complete_chains = evaluated = candidate_total = 0
     for record in records:
         expected = expected_tool_names(record)

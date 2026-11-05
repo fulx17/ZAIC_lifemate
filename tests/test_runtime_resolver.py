@@ -1,4 +1,6 @@
-from core.contracts import PlanGoal, PlanTask, TaskPlan, ToolSpec
+from core.contracts import AgentRequest, PlanGoal, PlanTask, TaskPlan, ToolSpec
+from modules.discovery.service import DiscoveryService
+from modules.planner.service import MockPlanner
 from modules.resolver.service import ResolverService
 from modules.runtime.engine import RuntimeService
 
@@ -84,7 +86,16 @@ def test_unique_lookup_binds_id_before_write() -> None:
         },
     )
 
-    result = RuntimeService().execute_plan(_plan(), ResolverService(), environment)
+    result = RuntimeService().execute_plan(
+        _plan(),
+        ResolverService(),
+        environment,
+        request=AgentRequest(sample_id="fixture", transcript="Nhắn cho Lan: hello"),
+        discovery=DiscoveryService(),
+        planner=MockPlanner(),
+        adaptive=True,
+        max_repair_calls=1,
+    )
 
     assert [call["name"] for call in environment.calls] == ["contacts.search", "sms.send"]
     assert environment.calls[-1]["arguments"] == {"contact_id": "c1", "content": "hello"}
@@ -102,7 +113,16 @@ def test_ambiguous_lookup_asks_user_without_write() -> None:
         },
     )
 
-    result = RuntimeService().execute_plan(_plan(), ResolverService(), environment)
+    result = RuntimeService().execute_plan(
+        _plan(),
+        ResolverService(),
+        environment,
+        request=AgentRequest(sample_id="fixture", transcript="Nhắn cho Lan: hello"),
+        discovery=DiscoveryService(),
+        planner=MockPlanner(),
+        adaptive=True,
+        max_repair_calls=1,
+    )
 
     assert [call["name"] for call in environment.calls] == [
         "contacts.search",

@@ -82,7 +82,8 @@ def test_invalid_single_shot_plan_is_rejected_without_tool_execution(monkeypatch
     assert result.status == "PLAN_INVALID"
     assert result.tool_calls == []
     assert len(llm.calls) == 1
-    assert result.trace[0]["qwen_calls"] == 1
+    completed = next(event for event in result.trace if event["event"] == "pipeline_completed")
+    assert completed["qwen_calls"] == 1
 
 
 def test_flow_audit_is_short_and_redacts_user_content(tmp_path: Path, capsys) -> None:
@@ -157,6 +158,10 @@ def test_full_audit_records_transcript_plan_arguments_and_tool_result(tmp_path: 
     events_path = tmp_path / "fixture_rainy.events.jsonl"
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
     by_name = {event["event"]: event["details"] for event in events}
+    event_names = [event["event"] for event in events]
+    assert event_names.index("plan_accepted") < event_names.index("tool_started")
+    assert event_names.index("tool_started") < event_names.index("tool_result_detail")
+    assert event_names.index("tool_result_detail") < event_names.index("tool_completed")
     assert by_name["transcript_ready"] == {
         "source": "transcript_override",
         "text": fixture["transcript"],

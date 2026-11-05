@@ -3,7 +3,7 @@ from modules.runtime.engine import RuntimeService
 
 
 class IdentityResolver:
-    def resolve(self, task, observations, tool_spec):
+    def resolve(self, task, observations, tool_spec, *, context=None, transcript=""):
         return ResolutionResult(status="READY", arguments=dict(task.arguments))
 
 
@@ -82,7 +82,7 @@ def test_false_guard_skips_write_and_unknown_guard_does_not_run_it() -> None:
         "weather.get_forecast",
         "sys.ask_missing_info",
     ]
-    assert unknown_result.execution_status == "NEEDS_USER"
+    assert unknown_result.execution_status == "PARTIAL"
     assert unknown_result.task_states["send"] == "BLOCKED"
 
 
@@ -130,4 +130,3 @@ def test_uncertain_write_failure_is_not_retried() -> None:
     assert len(environment.calls) == 1
     assert result.execution_status == "FAILED"
     assert result.issues[0]["code"] == "UNCERTAIN_EFFECT"
-

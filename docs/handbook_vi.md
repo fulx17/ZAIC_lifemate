@@ -12,8 +12,8 @@ gốc repo, ví dụ `C:\contest\ZAIC2026`.
 manifest + audio + runtime context
     → ASR (audio thành transcript)
     → Discovery (chọn candidate từ tool catalog được phép)
-    → Planner (tạo một TaskPlan; baseline gọi Qwen tối đa một lần)
-    → Runtime (lập lịch, gọi Resolver, validate và thực thi tool)
+    → Planner (tạo TaskPlan; Qwen có tối đa một lượt repair có điều kiện)
+    → Runtime (lập lịch, gọi Resolver; khi có issue có thể gọi Discovery → Planner repair)
     → Environment (mock hoặc simulator zaic_tools)
     → kết quả + audit
 ```
@@ -21,7 +21,9 @@ manifest + audio + runtime context
 Năm module hiện tại là `asr`, `discovery`, `planner`, `resolver`, `runtime`. Đây là tên và layout
 đang có trong code, không phải tên module của baseline V1 cũ. `app/` lắp các module và điều khiển
 chạy; `core/` chứa contracts dùng chung. Discovery, Resolver và Runtime là deterministic, không gọi
-Qwen. PhoWhisper là model ASR riêng; Qwen chỉ lập kế hoạch.
+Qwen. PhoWhisper là model ASR riêng; Planner là nơi duy nhất gọi Qwen cho plan ban đầu và repair.
+Mặc định `baseline.yaml` dùng `adaptive_on_issue`: 1 lần lập plan và tối đa 1 lần repair, chỉ khi
+Resolver phát hiện thiếu thông tin. Có thể chọn `strict_single_shot` để chạy ablation không repair.
 
 ## 2. Cài đặt môi trường
 
@@ -108,7 +110,8 @@ models:
 
 Không đổi `checkpoint`/`revision` sang model khác mà chưa kiểm tra tương thích, license và luật thi.
 Baseline mẫu đặt ASR `pho_whisper` trên `device: 0`/`float16`, Qwen quantization `4bit`, Planner
-`qwen_single_shot`, Environment `official`.
+`qwen_single_shot`, Environment `official`, planning mode `adaptive_on_issue` (1 initial call + tối
+đa 1 repair call).
 
 Qwen 4-bit yêu cầu CUDA theo code hiện tại; model và tokenizer được tải với
 `local_files_only=True`. Nếu thiếu weights, thiếu package hoặc GPU không đáp ứng yêu cầu, chương
@@ -174,9 +177,17 @@ Lệnh này đọc audio/context/catalog thật của sample nhưng dùng implem
 python -m app.run_one --config configs/baseline.yaml --split public_test --id public_0002
 ```
 
-Đây là audio mode mặc định: PhoWhisper nhận dạng file WAV, Qwen tạo plan trong một planning call,
-rồi Runtime thực thi qua adapter `official` của kit. Lệnh cần dataset, weights và dependencies
-local-models đã sẵn sàng.
+Đây là audio mode mặc định: PhoWhisper nhận dạng file WAV, Qwen tạo plan; nếu Resolver phát hiện
+thiếu dữ kiện, Planner có thể dùng thêm tối đa một repair call sau khi Discovery truy hồi các
+provider read-only được phép. Runtime chỉ thực thi tool trong allowed catalog của sample qua
+adapter `official`. Lệnh cần dataset, weights và dependencies local-models đã sẵn sàng:
+
+```powershell
+python -m app.run_one --config configs/baseline.yaml --split public_test --id public_0002 --audit-level full --audit-console flow --include-trace
+```
+
+Để đối chứng single-shot, đặt `planning.mode: strict_single_shot` và `planning.max_repair_calls: 0`
+trong bản config riêng. Không sửa mode khi so sánh nếu cần giữ cấu hình thí nghiệm có thể lặp lại.
 
 Muốn dùng Qwen thật nhưng bỏ qua ASR để cô lập kiểm tra planner, có thể dùng transcript tham chiếu
 của **train**:
@@ -277,7 +288,15 @@ Mở `outputs/audit/public_0002.events.jsonl`. Những event hữu ích gồm `t
 `tool_result_detail`, `execution_finished` và `pipeline_completed`. Flow tóm tắt hiện trên terminal;
 `full` details không được in ra console.
 
-`full` có thể lưu tên, địa chỉ, nội dung tin nhắn, thông tin thanh toán hoặc dữ liệu trả về từ tool.
+Timeline event JSONL được ghi đúng lúc event xảy ra. Luồng adaptive có thể gồm
+`task_blocked` → `information_need_created` → `recovery_retrieval_completed` →
+`repair_requested`/`repair_generated` → `patch_accepted` hoặc `patch_rejected` →
+`explore_task_added` → `arguments_grounded` → tool events. Candidate retrieval chỉ là đề xuất; tool
+chỉ được gọi sau khi patch được Runtime xác thực. `SATISFIED`, `NEEDS_USER`, `PARTIAL`, `BLOCKED` và
+`FAILED` là kết quả khác nhau; hoàn thành nhánh độc lập không xóa issue của nhánh còn thiếu.
+
+`full` có thể lưu transcript, tên, địa chỉ, nội dung tin nhắn, thông tin thanh toán, repair input,
+patch và dữ liệu trả về từ tool.
 Chỉ bật khi cần debug local; không commit/chia sẻ file. `--include-trace` là trace Runtime trong
 JSON stdout, khác với file audit. Dữ liệu gửi cho cuộc thi vẫn được lọc riêng qua competition
 adapter.
@@ -294,15 +313,22 @@ Hai YAML mẫu là điểm bắt đầu:
 Các nhóm cấu hình:
 
 - `run`: seed, giới hạn execution/LLM/time, trace và audit.
+- `planning`: `mode` (`adaptive_on_issue` hoặc `strict_single_shot`), số initial/repair calls và
+  patch mode. Mặc định baseline là 1 initial + tối đa 1 repair call.
+- `runtime`: giới hạn số exploration task, số bước và chính sách chống lặp side effect.
+- `resolver`: bật semantic readiness/provenance cho time, location, recipient/identity, amount và
+  payment.
+- `discovery`: Top-K ban đầu và Top-K truy hồi khi có information need.
 - `models.asr`: implementation, checkpoint/revision, local path, device/dtype.
 - `models.llm`: implementation, local path, quantization và giới hạn sinh JSON.
 - `modules`: implementation từng module và `discovery_top_k`.
 - `dataset`: bundle root, manifest, catalog/environment paths.
 - `environment`: adapter và chính sách tool.
 
-Không phải mọi key nằm trong YAML mẫu đều hiện đang được đọc bởi runtime. Trước khi dựa vào một
-tham số, tìm key trong code hoặc hỏi `python -m app.run_one --help`; đừng coi cấu hình mẫu như
-schema đã được validate đầy đủ. Ví dụ, hard cap Qwen hiện được đặt ở một call/sample.
+Các key planning/runtime/resolver/discovery nói trên được đọc ở composition root và pipeline.
+`max_initial_calls + max_repair_calls` xác định budget Qwen theo request; `max_execution_steps`
+vẫn giới hạn tổng số tool calls. CLI flags không ghi đè planning mode, nên dùng YAML riêng cho
+ablation.
 
 Config path được nạp từ file YAML; các đường dẫn tương đối của dataset được resolve theo project
 root. Snapshot model trong `baseline.yaml` hiện dùng đường dẫn tuyệt đối trên máy phát triển, nên
@@ -328,7 +354,7 @@ còn được liệt kê trong baseline instruction cũ.
 - `run_one.py`: CLI cho một sample/fixture; nạp config, sample, adapter rồi gọi Pipeline.
 - `run_dataset.py`: CLI batch; gọi pipeline cho mỗi sample và ghi submission JSONL.
 - `pipeline.py`: thứ tự ASR → Discovery → Planner → Runtime, audit và internal trace.
-- `build_services.py`: lắp implementations từ YAML; tạo/reuse Qwen client và budget một call.
+- `build_services.py`: lắp implementations từ YAML; tạo/reuse Qwen client và budget initial + repair calls.
 - `dataset_io.py`: tìm bundle, đọc JSONL/audio, kiểm tra split và loại label/audio_text khỏi inference.
 - `environment.py`: `MockEnvironment`, `OfficialEnvironment`, nạp schema/catalog từ kit.
 - `competition_io.py`: serialize submission với đúng key/thứ tự tool calls.
@@ -353,9 +379,9 @@ còn được liệt kê trong baseline instruction cũ.
 |---|---|---|
 | `modules/asr/` | `pho_whisper.py`, `mock.py`, `audio.py`, `service.py` | Kiểm tra WAV, nhận dạng PhoWhisper local hoặc transcript mock, chuẩn hóa transcript nhẹ. |
 | `modules/discovery/` | `service.py`, `retriever.py`, `registry.py` | Keyword/capability retrieval từ catalog đúng sample; closure chỉ thêm tool nếu tool đó có trong catalog. Retrieval không cấp quyền mới. |
-| `modules/planner/` | `service.py`, `prompts/plan.txt` | MockPlanner cho smoke test; SingleShotPlanner dùng Qwen một lần để trả TaskPlan schema v2. |
-| `modules/resolver/` | `service.py`, `bindings.py`, `entity_matcher.py` | Bind typed `$ref`, dò entity duy nhất, validate arguments theo JSON Schema subset; không gọi model/tool. |
-| `modules/runtime/` | `engine.py`, `scheduler.py`, `state.py`, `verifier.py` | Scheduler dependency/condition, gọi resolver/environment, xác minh kết quả, quản lý state/event trong sample. Không semantic replan. |
+| `modules/planner/` | `service.py`, `prompts/plan.txt`, `prompts/repair.txt` | Initial TaskPlan và typed PlanPatch/ASK_USER/STOP; Qwen chỉ được gọi từ Planner. |
+| `modules/resolver/` | `service.py`, `bindings.py`, `entity_matcher.py` | Bind `$ref`/`$context`/`$time`/`$user`, provenance/precision checks, tạo InformationNeed; không gọi model/tool. |
+| `modules/runtime/` | `engine.py`, `scheduler.py`, `state.py`, `verifier.py` | Single-writer state, issue-triggered recovery, budgets/dedup, patch validation, ordered execution/audit. |
 
 Mỗi module có `tests/`; ASR cũng có `experiments/`. Thêm implementation/test vào đúng module owner.
 Module không nên import implementation trực tiếp từ module khác; giao tiếp qua `core` contracts.
@@ -403,6 +429,7 @@ python -m scripts.eval_discovery --config configs/baseline.yaml --limit 20
 python -m scripts.eval_planner --config configs/baseline.yaml --limit 10
 python -m scripts.eval_resolver
 python -m scripts.eval_runtime
+python -m scripts.eval_adaptive
 ```
 
 Tham số các script tiện ích:
@@ -416,7 +443,8 @@ Tham số các script tiện ích:
 | `python -m scripts.eval_discovery` | `--config`, `--limit` | Recall@K/full-chain recall trên train. |
 | `python -m scripts.eval_planner` | `--config`, `--limit` | Kiểm tra plan model trên train; cần Qwen local. |
 | `python -m scripts.eval_resolver` | Không có option riêng | Chạy resolver fixture tests. |
-| `python -m scripts.eval_runtime` | Không có option riêng | Chạy runtime/integration fixture tests. |
+| `python -m scripts.eval_runtime` | Không có option riêng | Chạy runtime, adaptive recovery và integration fixture tests. |
+| `python -m scripts.eval_adaptive` | Không có option riêng | Strict-vs-adaptive synthetic safety check; không đo model accuracy và không đọc dataset labels. |
 | `python -m scripts.evaluate_train` | `--config`, `--submission` (bắt buộc) | So sánh submission với labels train, dùng offline. |
 | `python -m scripts.download_models` | `--repo-id`, `--revision`, `--local-dir` (đều bắt buộc) | Tải snapshot trong khâu chuẩn bị; cần `huggingface_hub` cài riêng. |
 
@@ -454,7 +482,7 @@ python -m scripts.make_train_split --config configs/baseline.yaml --seed 42 --va
 | `ASR_MODEL_NOT_FOUND` hoặc `MODEL_NOT_FOUND` | Sửa `models.asr.local_path`/`models.llm.local_path` trong baseline YAML; đường dẫn phải trỏ đến snapshot local. |
 | `*_DEPENDENCY_MISSING` | Cài `python -m pip install -e ".[dev,local-models]"` trong đúng virtualenv. |
 | Qwen báo 4-bit cần CUDA | `baseline.yaml` bật `quantization: 4bit`; xác nhận CUDA/GPU phù hợp. Không tự chuyển cấu hình sang mock nếu cần kết quả model thật. |
-| `PLAN_INVALID` | Mở full audit để xem `plan_generated` nếu plan được tạo; kiểm tra candidate tool, schema, dependency/ref và prompt. Planner không chạy lần sửa thứ hai. |
+| `PLAN_INVALID` | Mở full audit xem `plan_generated`; kiểm tra candidate tool, schema, dependency/ref và prompt. Patch không hợp lệ có event `patch_rejected` và không được thực thi. |
 | Không tìm thấy sample/audio | Xác nhận bundle root, split đúng, ID tồn tại; `sanity_check` và loader sẽ báo nếu manifest/WAV thiếu. |
 | Không thấy `events.jsonl` | Chọn `--audit-level debug` hoặc `full`; `flow` chỉ sinh `.flow.txt`, `off` không ghi audit. |
 | Public test từ chối transcript reference | Đây là giới hạn có chủ ý: chỉ train được phép dùng `--input-mode transcript_reference`. |

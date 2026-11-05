@@ -17,6 +17,7 @@ python -m app.run_one --config configs/mock.yaml --split public_test --id public
 python -m scripts.eval_discovery --config configs/mock.yaml --limit 20
 python -m scripts.eval_resolver
 python -m scripts.eval_runtime
+python -m scripts.eval_adaptive
 python -m pytest -q
 ruff check .
 ```
@@ -27,12 +28,14 @@ limited to smoke-test cases; it is not a quality benchmark. For local inference,
 run:
 
 ```powershell
-python -m app.run_one --config configs/baseline.yaml --split public_test --id public_0002 --audit-level flow
+python -m app.run_one --config configs/baseline.yaml --split public_test --id public_0002 --audit-level full --audit-console flow
 ```
 
-The Qwen planner makes one non-repairing JSON call per sample. Discovery, Resolver, and Runtime do
-not call a model. Local model loading uses local files only; inference does not download weights or
-call external model services.
+The default `adaptive_on_issue` mode allows one initial Qwen plan call and up to one issue-triggered
+repair call. Set `planning.mode: strict_single_shot` and `planning.max_repair_calls: 0` for the
+single-call ablation. Planner is the only module that calls Qwen; Discovery retrieval, Resolver
+grounding, and Runtime validation/execution are deterministic. Local model loading uses local files
+only; inference does not download weights or call external model services.
 
 Offline train evaluators are available via `scripts.eval_asr`, `scripts.eval_discovery`, and
 `scripts.eval_planner`. Planner evaluation requires local Qwen weights and uses oracle candidates;
@@ -44,12 +47,13 @@ is present for those outputs.
 
 - `modules/asr`: WAV to normalized transcript; MockASR and PhoWhisper adapters.
 - `modules/discovery`: deterministic retrieval from the sample's actual allowed catalog; retrieval
-  never grants permission to call a tool.
-- `modules/planner`: one Qwen call producing immutable schema-v2 goals, tasks, dependencies,
-  conditions, and typed `$ref`s.
-- `modules/resolver`: deterministic reference binding and schema checks; no LLM or environment calls.
-- `modules/runtime`: bounded dependency scheduler, tri-state guards, verification, missing-info
-  protocol, and audit events; no semantic replanning.
+  never grants permission to call a tool; recovery candidates are read-only and sample-allowlisted.
+- `modules/planner`: initial immutable schema-v2 plan and optional typed `PlanPatch` repair;
+  no tool execution.
+- `modules/resolver`: deterministic `$ref`/`$context`/`$time`/`$user` binding, provenance/precision
+  checks, and structured `InformationNeed`; no LLM or environment calls.
+- `modules/runtime`: bounded dependency scheduler, tri-state guards, patch validation, recovery
+  deduplication, verification, and ordered audit timeline.
 - `app/`: composition, safe dataset loading, official/mock environment adapters, CLI, audit render,
   and competition serialization.
 - `core/`: shared schema-v2 contracts and module protocols.
@@ -66,7 +70,9 @@ Mock hashes are test-only.
 
 `run_one` writes compact `outputs/audit/<sample>.flow.txt` by default. `--audit-level debug` adds
 allowlisted `*.events.jsonl` metadata (tool and field names, statuses, and counts); it excludes
-transcripts, prompts, argument values, and raw tool results.
+transcripts, prompts, argument values, and raw tool results. The timeline records issue creation,
+recovery candidates, repair decisions, patch validation, grounded arguments, and actual tool events
+in execution order.
 `run_dataset` defaults to audit off so it writes one summary line per sample.
 
 ```powershell
@@ -76,8 +82,9 @@ python -m app.run_one --config configs/baseline.yaml --split public_test --id pu
 ```
 
 Use `--audit-level full` for local diagnosis: the JSONL includes the ASR transcript, generated plan,
-resolved arguments, and raw tool results. These can contain private information; keep the file local
-and use `flow` or `debug` for ordinary runs. Full details are not printed to the console.
+repair inputs/patches, resolved arguments, and raw tool results. These can contain private
+information; keep the file local and use `flow` or `debug` for ordinary runs. Full details are not
+printed to the console.
 
 Official competition rules for checkpoints, licensing, model limits, and hardware still need
 verification before packaging. The mock path and local kit adapter tests are not a model-quality or

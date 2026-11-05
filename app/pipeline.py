@@ -111,6 +111,20 @@ class Pipeline:
                     trace=[{"event": "plan_rejected", "reason": "PLAN_INVALID", "message": str(exc)}],
                 )
             else:
+                planning = self.config.get("planning", {})
+                planning_mode = planning.get("mode", "strict_single_shot")
+                if planning_mode not in {"strict_single_shot", "adaptive_on_issue"}:
+                    raise ValueError(f"Unknown planning mode: {planning_mode!r}")
+                if audit_log:
+                    audit_log.emit(
+                        "plan_created",
+                        {
+                            "plan_version": 0,
+                            "goal_count": len(plan.goals),
+                            "task_count": len(plan.tasks),
+                            "planner_call_index": getattr(self.services.planner, "call_count", 0),
+                        },
+                    )
                 if audit_log and audit_log.level == "full":
                     audit_log.emit("plan_generated", {"plan": plan.model_dump(mode="json")})
                 detailed_audit = (
@@ -118,11 +132,31 @@ class Pipeline:
                     if audit_log is not None and audit_log.level == "full"
                     else None
                 )
+
+                def event_sink(event):
+                    if audit_log is None:
+                        return
+                    audit_log.emit(
+                        event.event,
+                        {
+                            **event.details,
+                            "task_id": event.task_id,
+                            "tool_name": event.tool,
+                            "status": event.status,
+                        },
+                    )
+
                 run_result = self.services.runtime.execute_plan(
                     plan,
                     self.services.resolver,
                     environment,
+                    request=request,
+                    discovery=self.services.discovery,
+                    planner=self.services.planner,
+                    adaptive=planning_mode == "adaptive_on_issue",
+                    max_repair_calls=planning.get("max_repair_calls", 0),
                     detailed_audit=detailed_audit,
+                    event_sink=event_sink if audit_log else None,
                 )
                 result = AgentResult(
                     id=sample.id,
@@ -131,20 +165,8 @@ class Pipeline:
                     state_hash=run_result.state_hash,
                     trace=[event.model_dump(mode="json") for event in run_result.audit_events],
                 )
-                if audit_log:
-                    for event in run_result.audit_events:
-                        audit_log.emit(
-                            event.event,
-                            {
-                                **event.details,
-                                "task_id": event.task_id,
-                                "tool_name": event.tool,
-                                "status": event.status,
-                            },
-                        )
 
-            result.trace.insert(
-                0,
+            result.trace.append(
                 {
                     "event": "pipeline_completed",
                     "status": result.status,

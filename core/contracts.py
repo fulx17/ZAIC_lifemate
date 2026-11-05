@@ -129,6 +129,68 @@ class PlanTask(ContractModel):
         return _freeze_plan_value(value)
 
 
+class InformationNeed(ContractModel):
+    issue_id: str
+    task_id: str
+    field: str
+    kind: Literal["LOCATION", "TIME", "ENTITY", "VALUE", "FACT", "ARGUMENT"]
+    question: str
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    known_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    required_precision: str | None = None
+    attempt_history: list[str] = Field(default_factory=list)
+    capability_hints: list[str] = Field(default_factory=list)
+    severity: Literal["critical", "high", "normal"] = "high"
+    why_not_ready: str = ""
+    needs_user_decision: bool = False
+
+
+class ToolCandidate(ContractModel):
+    tool: ToolSpec
+    score: int
+    rank: int
+    rationale: str
+    provider_evidence: list[str] = Field(default_factory=list)
+
+
+class PlanTaskUpdate(ContractModel):
+    task_id: str
+    arguments: dict[str, Any] | None = None
+    depends_on: tuple[str, ...] | None = None
+
+
+class PlanPatch(ContractModel):
+    action: Literal["patch", "ask_user", "stop"]
+    base_plan_version: int
+    addressed_issue_ids: list[str] = Field(default_factory=list)
+    add_tasks: list[PlanTask] = Field(default_factory=list)
+    updates: list[PlanTaskUpdate] = Field(default_factory=list)
+    rationale: str = ""
+    message: str | None = None
+
+
+class ResolutionIssue(ContractModel):
+    issue_id: str
+    code: Literal[
+        "MISSING",
+        "UNDERSPECIFIED",
+        "UNRESOLVED",
+        "AMBIGUOUS",
+        "NOT_FOUND",
+        "INVALID",
+        "STALE",
+        "INCONSISTENT",
+        "UNSUPPORTED",
+    ]
+    field: str
+    why_not_ready: str
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    known_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    needs_user_decision: bool = False
+    information_need: InformationNeed | None = None
+
+
 class TaskPlan(ContractModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True, frozen=True)
 
@@ -213,10 +275,14 @@ class ResolutionResult(ContractModel):
     status: Literal[
         "READY",
         "MISSING",
+        "UNDERSPECIFIED",
+        "UNRESOLVED",
         "AMBIGUOUS",
         "NOT_FOUND",
         "INVALID",
         "STALE",
+        "INCONSISTENT",
+        "UNSUPPORTED",
         "NEEDS_EXPLORE",
         "NEEDS_USER",
     ]
@@ -226,6 +292,8 @@ class ResolutionResult(ContractModel):
     suggested_tools: list[str] = Field(default_factory=list)
     suggested_arguments: dict[str, Any] = Field(default_factory=dict)
     message: str | None = None
+    issues: list[ResolutionIssue] = Field(default_factory=list)
+    provenance: dict[str, str] = Field(default_factory=dict)
 
 
 class ToolResult(ContractModel):
@@ -245,12 +313,22 @@ class AuditEvent(ContractModel):
 
 
 class RunResult(ContractModel):
-    execution_status: Literal["SATISFIED", "NEEDS_USER", "UNSUPPORTED", "BLOCKED", "FAILED", "PLAN_INVALID"]
+    execution_status: Literal[
+        "SATISFIED",
+        "NEEDS_USER",
+        "PARTIAL",
+        "UNSUPPORTED",
+        "BLOCKED",
+        "FAILED",
+        "PLAN_INVALID",
+    ]
     task_states: dict[str, str] = Field(default_factory=dict)
     issues: list[dict[str, Any]] = Field(default_factory=list)
     audit_events: list[AuditEvent] = Field(default_factory=list)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     state_hash: str = ""
+    plan_version: int = 0
+    qwen_calls: int = 0
 
 
 class RuntimeSample(ContractModel):

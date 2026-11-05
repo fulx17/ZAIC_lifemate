@@ -2,7 +2,7 @@ run:
   mode: mock
   seed: 42
   max_execution_steps: 12
-  max_llm_calls: 1
+  max_llm_calls: 2
   max_runtime_seconds: 120
   save_traces: false
 
@@ -18,11 +18,29 @@ models:
     thinking_default: false
     max_new_tokens:
       plan: 900
+      repair: 700
 
 modules:
   asr_impl: mock
   planner_impl: mock
   discovery_top_k: 8
+
+planning:
+  mode: adaptive_on_issue
+  max_initial_calls: 1
+  max_repair_calls: 1
+
+runtime:
+  max_explore_tasks: 3
+  per_issue_attempts: 1
+
+resolver:
+  strict_semantic_ready: true
+  require_provenance_for: [time, location, recipient, identity, amount, payment]
+
+discovery:
+  initial_top_k: 8
+  recovery_top_k: 5
 
 dataset:
   bundle_root: ./train+public_test/train+public_test

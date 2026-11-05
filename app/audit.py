@@ -29,6 +29,16 @@ _SAFE_FIELDS = {
     "character_count",
     "steps",
     "guard",
+    "plan_version",
+    "base_plan_version",
+    "planner_call_index",
+    "call_index",
+    "issue_ids",
+    "field",
+    "kind",
+    "added_task_count",
+    "updated_task_count",
+    "sources",
 }
 
 
@@ -44,6 +54,11 @@ def _flow_entries(event: str, details: dict[str, Any]) -> list[str]:
         return ["ASR   source=train_reference"]
     if event == "discovery_completed":
         return [f"DISCOVER candidates={details.get('candidate_count', 0)}"]
+    if event == "plan_created":
+        return [
+            f"PLAN  created version={details.get('plan_version', 0)} "
+            f"tasks={details.get('task_count', 0)}"
+        ]
     if event == "plan_accepted":
         return [
             f"GOAL  goals={details.get('goal_count', 0)}",
@@ -54,6 +69,23 @@ def _flow_entries(event: str, details: dict[str, Any]) -> list[str]:
     if event == "arguments_resolved":
         fields = ",".join(details.get("fields", [])) or "-"
         return [f"BIND  {task_id} fields={fields} status={details.get('status', 'UNKNOWN')}"]
+    if event == "arguments_grounded":
+        return [f"GROUND {task_id} sources={len(details.get('sources', {}))}"]
+    if event == "task_blocked":
+        return [f"BLOCK {task_id} issues={len(details.get('issue_ids', []))}"]
+    if event == "information_need_created":
+        return [f"NEED  {task_id} {details.get('field', '?')} kind={details.get('kind', '?')}"]
+    if event == "recovery_retrieval_completed":
+        return [f"RECOVER {task_id} candidates={details.get('candidate_count', 0)}"]
+    if event in {"repair_requested", "repair_generated"}:
+        return [
+            f"REPAIR {task_id} call={details.get('call_index', '?')} "
+            f"status={details.get('status', 'RUNNING')}"
+        ]
+    if event in {"patch_accepted", "patch_rejected"}:
+        return [f"PATCH {task_id} {event.removeprefix('patch_').upper()}"]
+    if event == "explore_task_added":
+        return [f"EXPLORE {task_id} {details.get('tool_name', '?')} PENDING"]
     if event == "task_skipped":
         if details.get("reason") == "dependency_skipped":
             return [f"BRANCH {task_id} dependency=SKIPPED -> skip"]
@@ -153,10 +185,11 @@ def print_dataset_summary(results: list[AgentResult]) -> None:
     blocked = sum(result.status == "BLOCKED" for result in results)
     unsupported = sum(result.status == "UNSUPPORTED" for result in results)
     failed = sum(result.status in {"FAILED", "PLAN_INVALID"} for result in results)
+    partial = sum(result.status == "PARTIAL" for result in results)
     tool_calls = sum(len(result.tool_calls) for result in results)
     print(
         f"TOTAL {len(results)} | success={satisfied} needs_user={waiting} blocked={blocked} "
-        f"unsupported={unsupported} failed={failed} | tool_calls={tool_calls}",
+        f"partial={partial} unsupported={unsupported} failed={failed} | tool_calls={tool_calls}",
         file=sys.stderr,
         flush=True,
     )

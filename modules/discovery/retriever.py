@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from core.contracts import AgentRequest, ToolSpec
+from core.contracts import AgentRequest, InformationNeed, ToolCandidate, ToolSpec
 
 _CAPABILITY_TERMS = {
     "weather.get_forecast": {"weather", "forecast", "rain", "mưa", "thời tiết", "dự báo"},
@@ -24,14 +24,33 @@ _CLOSURE = {
     "calendar.update_event": ("calendar.list_events",),
     "calendar.cancel_event": ("calendar.list_events",),
 }
+_NEED_CAPABILITIES = {
+    "LOCATION": {
+        "appointment": ("calendar.list_events", "reminders.list"),
+        "event": ("calendar.list_events",),
+        "contact": ("contacts.search",),
+    },
+    "TIME": {
+        "appointment": ("calendar.list_events", "reminders.list"),
+        "event": ("calendar.list_events",),
+        "schedule": ("calendar.list_events", "reminders.list"),
+        "weather": ("weather.get_forecast",),
+    },
+    "ENTITY": {"contact": ("contacts.search",)},
+    "FACT": {
+        "event": ("calendar.list_events",),
+        "appointment": ("calendar.list_events", "reminders.list"),
+    },
+}
 _TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 class ToolRetriever:
-    def __init__(self, top_k: int = 8):
-        if top_k < 1:
-            raise ValueError("top_k must be positive")
+    def __init__(self, top_k: int = 8, recovery_top_k: int | None = None):
+        if top_k < 1 or (recovery_top_k is not None and recovery_top_k < 1):
+            raise ValueError("retrieval limits must be positive")
         self.top_k = top_k
+        self.recovery_top_k = recovery_top_k or top_k
 
     def retrieve(self, request: AgentRequest, catalog: list[ToolSpec]) -> list[ToolSpec]:
         by_name = {tool.name: tool for tool in catalog}
@@ -58,3 +77,46 @@ class ToolRetriever:
                 if related in by_name:
                     selected.setdefault(related, by_name[related])
         return list(selected.values())
+
+    def retrieve_for_need(
+        self,
+        need: InformationNeed,
+        catalog: list[ToolSpec],
+        history: list[str] | None = None,
+    ) -> list[ToolCandidate]:
+        """Find allowed read-only providers for an information gap without executing them."""
+        tried = set(history or ())
+        query = " ".join(
+            [need.field, need.kind, need.question, *need.capability_hints, *need.attempt_history]
+        ).casefold()
+        query_tokens = set(_TOKEN.findall(query))
+        preferred = {
+            name
+            for capability, names in _NEED_CAPABILITIES.get(need.kind, {}).items()
+            if capability in query
+            for name in names
+        }
+        ranked: list[tuple[int, str, ToolSpec, list[str]]] = []
+        for tool in catalog:
+            if tool.kind != "read" or tool.name in tried or tool.name == "sys.ask_missing_info":
+                continue
+            searchable = f"{tool.name} {tool.description}".casefold().replace(".", " ").replace("_", " ")
+            tool_tokens = set(_TOKEN.findall(searchable))
+            terms = _CAPABILITY_TERMS.get(tool.name, set())
+            matched_terms = sorted(term for term in terms if term in query)
+            overlap = len(query_tokens & tool_tokens)
+            score = overlap + 3 * len(matched_terms) + (4 if tool.name in preferred else 0)
+            if score:
+                evidence = matched_terms + sorted(query_tokens & tool_tokens)
+                ranked.append((score, tool.name, tool, evidence))
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        return [
+            ToolCandidate(
+                tool=tool,
+                score=score,
+                rank=rank,
+                rationale="read-only tool matches the information need",
+                provider_evidence=evidence,
+            )
+            for rank, (score, _, tool, evidence) in enumerate(ranked[: self.recovery_top_k], start=1)
+        ]

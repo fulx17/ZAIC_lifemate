@@ -10,3 +10,12 @@ Rules:
 - Include all independent goals. Use an explicit no_op goal only when the user requests no action.
 - If an essential value cannot be derived from the request/context or a prior result, leave it unresolved; do not guess.
 - Every task must belong to a goal and depend on all tasks referenced by its arguments or condition.
+For critical arguments (date/time, location, recipient/identity, amount, payment), never invent a value.
+Use {"$context":"user_profile.work_address"} for an exact context value,
+{"$user":{"value":"...","evidence":"exact supporting phrase from the transcript"}} for an explicitly stated value,
+{"$time":{"base":"context.current_time","relative_day":0,"period":"afternoon","exact_time":null}}
+for temporal facts that are partly known, and
+{"$need":{"kind":"LOCATION","description":"specific missing fact","constraints":{}}}
+when information is unresolved. The runtime resolver will not pass these expressions to tools:
+it will bind grounded values or block the task. Do not turn broad periods into an exact clock time.
+Do not treat the time at which the user says "book now" as the requested pickup time.
