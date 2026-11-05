@@ -1,0 +1,17 @@
+{
+  "id": "fixture_missing_contact",
+  "transcript": "Nhắn Sếp Dũng là tôi đến muộn.",
+  "sample": {
+    "id": "fixture_missing_contact",
+    "audio": "fixture.wav",
+    "context": {
+      "current_time": "2026-11-28T07:10:00+07:00",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "user_profile": {},
+      "history": [],
+      "installed_apps": {"sms": {"tools": ["sms.send"]}}
+    },
+    "history": []
+  },
+  "environment": {}
+}

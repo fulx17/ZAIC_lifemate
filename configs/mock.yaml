@@ -1,0 +1,39 @@
+run:
+  mode: mock
+  seed: 42
+  max_execution_steps: 12
+  max_llm_calls: 1
+  max_runtime_seconds: 120
+  save_traces: false
+
+models:
+  asr:
+    impl: mock
+    checkpoint: vinai/PhoWhisper-small
+    local_path: null
+  llm:
+    impl: mock
+    checkpoint: Qwen/Qwen3-4B
+    local_path: null
+    thinking_default: false
+    max_new_tokens:
+      plan: 900
+
+modules:
+  asr_impl: mock
+  planner_impl: mock
+  discovery_top_k: 8
+
+dataset:
+  bundle_root: ./train+public_test/train+public_test
+  train_manifest: train/train.jsonl
+  public_test_manifest: public_test/public_test.jsonl
+  sample_submission: public_test/sample_submission.jsonl
+  public_test_tool_catalog: public_test/public_test_tools_catalog.json
+  public_test_environment: public_test/public_test_environment
+  exclude_metadata_dirs: [__MACOSX]
+
+environment:
+  adapter: mock
+  enforce_installed_tools: true
+  allow_unverified_retries: false

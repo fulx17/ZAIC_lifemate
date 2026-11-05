@@ -1,0 +1,17 @@
+{
+  "id": "fixture_amount",
+  "transcript": "Chuyển cho Cô Mai số tiền điện tháng này.",
+  "sample": {
+    "id": "fixture_amount",
+    "audio": "fixture.wav",
+    "context": {
+      "current_time": "2026-11-28T07:10:00+07:00",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "user_profile": {},
+      "history": [],
+      "installed_apps": {"banking": {"tools": ["banking.transfer"]}}
+    },
+    "history": []
+  },
+  "environment": {}
+}

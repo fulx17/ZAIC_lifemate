@@ -1,0 +1,12 @@
+Create a complete executable plan for the user's latest request.
+Use only the supplied candidate tools and their exact argument schemas.
+Return schema_version "2.0", goals, and tasks as JSON.
+
+Rules:
+- Resolve corrections and cancellations from the whole transcript; do not execute superseded requests.
+- Represent conditional branches with `when` referencing a prior task result. Unknown is not false.
+- Use `$ref` with task_id/path/match/field/require_unique for values produced by earlier tasks.
+- Never invent future IDs or choose the first of multiple matches.
+- Include all independent goals. Use an explicit no_op goal only when the user requests no action.
+- If an essential value cannot be derived from the request/context or a prior result, leave it unresolved; do not guess.
+- Every task must belong to a goal and depend on all tasks referenced by its arguments or condition.

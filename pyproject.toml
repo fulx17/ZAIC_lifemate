@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lifemate-baseline"
+version = "0.1.0"
+description = "Modular, offline-capable LifeMate baseline pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.7,<3",
+  "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
+local-models = [
+  "transformers>=4.51,<5",
+  "torch>=2.4",
+  "accelerate>=1.0",
+  "bitsandbytes>=0.45,<0.51",
+  "soundfile>=0.12,<1",
+]
+
+[tool.setuptools]
+py-modules = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "core*", "modules*", "scripts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "modules"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["train+public_test", "lifemate_analysis_full"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

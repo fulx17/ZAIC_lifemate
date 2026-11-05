@@ -1,0 +1,16 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+.venv/
+outputs/*
+!outputs/.gitkeep
+models/
+.env
+train+public_test/
+lifemate_analysis_full/
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.bin

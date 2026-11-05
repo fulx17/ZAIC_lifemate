@@ -1,0 +1,45 @@
+run:
+  mode: local
+  seed: 42
+  max_execution_steps: 12
+  max_llm_calls: 1
+  max_runtime_seconds: 120
+  save_traces: true
+
+models:
+  asr:
+    impl: pho_whisper
+    checkpoint: vinai/PhoWhisper-medium
+    revision: 55a7e3eb6c906de891f8f06a107754427dd3be79
+    local_path: "C:/models/PhoWhisper-medium"
+    device: 0
+    torch_dtype: float16
+  llm:
+    impl: qwen3_4b
+    checkpoint: Qwen/Qwen3-4B-Instruct-2507
+    revision: cdbee75f17c01a7cc42f958dc650907174af0554
+    local_path: "C:/models/Qwen3-4B-Instruct-2507"
+    quantization: 4bit
+    thinking_default: false
+    context_limit: 8192
+    max_new_tokens:
+      plan: 900
+
+modules:
+  asr_impl: pho_whisper
+  planner_impl: qwen_single_shot
+  discovery_top_k: 8
+
+dataset:
+  bundle_root: ./train+public_test/train+public_test
+  train_manifest: train/train.jsonl
+  public_test_manifest: public_test/public_test.jsonl
+  sample_submission: public_test/sample_submission.jsonl
+  public_test_tool_catalog: public_test/public_test_tools_catalog.json
+  public_test_environment: public_test/public_test_environment
+  exclude_metadata_dirs: [__MACOSX]
+
+environment:
+  adapter: official
+  enforce_installed_tools: true
+  allow_unverified_retries: false

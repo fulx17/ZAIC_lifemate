@@ -1,0 +1,33 @@
+{
+  "id": "fixture_rainy",
+  "transcript": "Nếu mai mưa thì dời chạy bộ muộn 1 tiếng, nhắn Sếp Dũng giờ mới; không mưa thì thôi.",
+  "sample": {
+    "id": "fixture_rainy",
+    "audio": "fixture.wav",
+    "context": {
+      "current_time": "2026-11-28T07:10:00+07:00",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "location": {"lat": 16.0544, "lng": 108.2022},
+      "user_profile": {"city": "Đà Nẵng"},
+      "history": [],
+      "installed_apps": {
+        "weather": {"tools": ["weather.get_forecast"]},
+        "calendar": {"tools": ["calendar.list_events", "calendar.update_event"]},
+        "contacts": {"tools": ["contacts.search"]},
+        "sms": {"tools": ["sms.send"]}
+      }
+    },
+    "history": []
+  },
+  "environment": {
+    "rain": true,
+    "events": [{
+      "id": "evt_fixture",
+      "title": "chạy bộ",
+      "start": "2026-11-29T08:00:00+07:00",
+      "end": "2026-11-29T09:00:00+07:00",
+      "status": "confirmed"
+    }],
+    "contact": {"id": "contact_fixture", "name": "Sếp Dũng"}
+  }
+}

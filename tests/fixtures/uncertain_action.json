@@ -1,0 +1,17 @@
+{
+  "id": "fixture_uncertain",
+  "transcript": "Gửi tin nhắn cho Lan.",
+  "sample": {
+    "id": "fixture_uncertain",
+    "audio": "fixture.wav",
+    "context": {
+      "current_time": "2026-11-28T07:10:00+07:00",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "user_profile": {},
+      "history": [],
+      "installed_apps": {"sms": {"tools": ["sms.send"]}}
+    },
+    "history": []
+  },
+  "environment": {}
+}
